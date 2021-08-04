@@ -37,6 +37,24 @@ const videoConstraints = {
     width: window.innerWidth / 2
 };
 
+const iceServers = {
+  iceServers: [
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      url: 'turn:numb.viagenie.ca',
+      credential: 'muazkh',
+      username: 'webrtc@live.com'
+    },
+    {
+      "urls": [
+      "turn:13.250.13.83:3478?transport=udp"
+      ],
+      "username": "YzYNCouZM1mhqhmseWk6",
+      "credential": "YzYNCouZM1mhqhmseWk6"
+      }
+  ],
+}
+
 const Room = (props) => {
     const params = useParams()
     const [peers, setPeers] = useState([]);
@@ -90,6 +108,7 @@ const Room = (props) => {
             initiator: true,
             trickle: false,
             stream,
+            config: iceServers
         });
 
         peer.on("signal", signal => {
@@ -104,6 +123,7 @@ const Room = (props) => {
             initiator: false,
             trickle: false,
             stream,
+            config: iceServers
         })
 
         peer.on("signal", signal => {
