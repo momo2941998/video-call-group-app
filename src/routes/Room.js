@@ -2,11 +2,18 @@ import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
 import styled from "styled-components";
-import { useRouteMatch, useParams } from "react-router";
+import { useParams } from "react-router";
+import { 
+  setVideoTrackID, 
+  setAudioTrackID,
+  toggleVideoTrackEnabled,
+  toggleAudioTrackEnabled
+} from "../features/localStream/localStreamSlice";
+import { useDispatch, useSelector } from "react-redux";
 const Container = styled.div`
     padding: 20px;
     display: flex;
-    height: 100vh;
+    height: 80vh;
     width: 90%;
     margin: auto;
     flex-wrap: wrap;
@@ -24,7 +31,7 @@ const Video = (props) => {
         props.peer.on("stream", stream => {
             ref.current.srcObject = stream;
         })
-    }, []);
+    }, [props.preer]);
 
     return (
         <StyledVideo playsInline autoPlay ref={ref} />
@@ -63,45 +70,82 @@ const Room = (props) => {
     const peersRef = useRef([]);
     const {roomID} = params
 
+    const [localStream, setLocalStream] = useState()
+    const {
+      videoTrackID,
+      videoTrackEnabled,
+      audioTrackID,
+      audioTrackEnabled,
+    } = useSelector(store => store.localStream.value)
+    const dispatch = useDispatch()
+    
+
+
     useEffect(() => {
         socketRef.current = io.connect(process.env.REACT_APP_SOCKET_IO);
         navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true })
-            .then(stream => {
-                userVideo.current.srcObject = stream;
+            .then(currentStream => {
+                if (!currentStream) {
+                    // console.error("you must allow app access your camera and micro to meeting.")    
+                    return;
+                } 
+                setLocalStream(currentStream)
+                // set default track
+                dispatch(setAudioTrackID(currentStream.getAudioTracks()[0].id))
+                dispatch(setVideoTrackID(currentStream.getVideoTracks()[0].id))
+                userVideo.current.srcObject = currentStream;
                 socketRef.current.emit("x_join_room", roomID);
                 socketRef.current.on("all_users", users => {
-                    const peers = [];
+                    // console.debug(`get remote user info:  ${users}`)
+                    const remotePeers = [];
                     users.forEach(userID => {
-                        const peer = createPeer(userID, socketRef.current.id, stream);
+                        const peer = createPeer(userID, socketRef.current.id, currentStream);
                         peersRef.current.push({
                             peerID: userID,
                             peer,
                         })
-                        peers.push(peer);
+                        remotePeers.push(peer);
                     })
-                    setPeers(peers);
+                    setPeers(remotePeers);
                 })
-
+                
                 socketRef.current.on("user_joined", payload => {
-                    const peer = addPeer(payload.signal, payload.callerID, stream);
+                    // console.debug(`get info new user joined room:  ${payload}`)
+                    const peer = addPeer(payload.signal, payload.callerID, currentStream);
                     peersRef.current.push({
                         peerID: payload.callerID,
                         peer,
                     })
-
+        
                     setPeers(users => [...users, peer]);
                 });
-
+        
                 socketRef.current.on("receiving_returned_singal", payload => {
+                    // console.debug(`get receiving_returned_singal: ${payload}`)
                     const item = peersRef.current.find(p => p.peerID === payload.id);
                     item.peer.signal(payload.signal);
                 });
                 socketRef.current.on("room_full", () => {
-                  alert("room full")
+                    alert("room full")
                 })
-              })
-            .catch(err => console.error(err))
+            })
+
+
     }, []);
+    
+    useEffect(()=> {
+      if (localStream) {
+        console.debug(localStream.getTrackById(audioTrackID).label)
+        localStream.getTrackById(audioTrackID).enabled = audioTrackEnabled
+      }
+    }, [audioTrackEnabled])
+    
+    useEffect(()=> {
+      if (localStream) {
+        console.debug(localStream.getTrackById(videoTrackID).label)
+        localStream.getTrackById(videoTrackID).enabled = videoTrackEnabled
+      }
+    }, [videoTrackEnabled])
 
     function createPeer(userToSignal, callerID, stream) {
         const peer = new Peer({
@@ -112,6 +156,7 @@ const Room = (props) => {
         });
 
         peer.on("signal", signal => {
+            // console.debug(`creatPeer handle signal:${signal}`)
             socketRef.current.emit("sending_signal", { userToSignal, callerID, signal })
         })
 
@@ -127,6 +172,7 @@ const Room = (props) => {
         })
 
         peer.on("signal", signal => {
+          // console.debug(`addPeer handle signal: ${signal}`)
             socketRef.current.emit("returning_signal", { signal, callerID })
         })
 
@@ -136,6 +182,7 @@ const Room = (props) => {
     }
 
     return (
+      <div>
         <Container>
             <StyledVideo muted ref={userVideo} autoPlay playsInline />
             {peers.map((peer, index) => {
@@ -144,7 +191,13 @@ const Room = (props) => {
                 );
             })}
         </Container>
+        <div>
+          <button onClick={() => dispatch(toggleVideoTrackEnabled())}>{videoTrackEnabled===true ? "Disable ": "Enable "} Video</button>
+          <button onClick={() => dispatch(toggleAudioTrackEnabled())}>{audioTrackEnabled===true ? "Disable ": "Enable "} Audio</button>
+        </div>
+      </div>
     );
 };
 
 export default Room;
+
